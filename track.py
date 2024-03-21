@@ -74,7 +74,10 @@ class HMR2023TextureSampler(HMR2Predictor):
             'img': x[:,:3,:,:],
             'mask': (x[:,3,:,:]).clip(0,1),
         }
+        import time
+        st=time.time()
         model_out = self.model(batch)
+        print("Time for model forward: ", time.time()-st)
 
         # from hmr2.models.prohmr_texture import unproject_uvmap_to_mesh
 
