@@ -148,8 +148,8 @@ class HMR2_4dhuman(PHALP):
         super().__init__(cfg)
 
     def setup_hmr(self):
-        # self.HMAR = HMR2023TextureSampler(self.cfg)
-        self.HMAR = HMR2Predictor(self.cfg)
+        self.HMAR = HMR2023TextureSampler(self.cfg)
+        # self.HMAR = HMR2Predictor(self.cfg)
 
     def get_detections(self, image, frame_name, t_, additional_data=None, measurments=None):
         (
