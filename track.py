@@ -37,7 +37,6 @@ class HMR2Predictor(HMR2018Predictor):
 
     def forward(self, x):
         hmar_out = self.hmar_old(x)
-        return hmar_out
         batch = {
             'img': x[:,:3,:,:],
             'mask': (x[:,3,:,:]).clip(0,1),
@@ -63,12 +62,12 @@ class HMR2023TextureSampler(HMR2Predictor):
         self.img_size = 256         #self.cfg.MODEL.IMAGE_SIZE
         self.focal_length = 5000.   #self.cfg.EXTRA.FOCAL_LENGTH
 
-        import neural_renderer as nr
-        self.neural_renderer = nr.Renderer(dist_coeffs=None, orig_size=self.img_size,
-                                          image_size=self.img_size,
-                                          light_intensity_ambient=1,
-                                          light_intensity_directional=0,
-                                          anti_aliasing=False)
+        # import neural_renderer as nr
+        # self.neural_renderer = nr.Renderer(dist_coeffs=None, orig_size=self.img_size,
+        #                                   image_size=self.img_size,
+        #                                   light_intensity_ambient=1,
+        #                                   light_intensity_directional=0,
+        #                                   anti_aliasing=False)
 
     def forward(self, x):
         batch = {
@@ -106,30 +105,30 @@ class HMR2023TextureSampler(HMR2Predictor):
         # map_verts_view = einsum('bij,bnj->bni', R, map_verts) + t # R=I t=0
         focal = self.focal_length / (self.img_size / 2)
         map_verts_proj = focal * map_verts[:, :, :2] / map_verts[:, :, 2:3] # B,N,2
-        map_verts_depth = map_verts[:, :, 2] # B,N
+        # map_verts_depth = map_verts[:, :, 2] # B,N
 
         # Render Depth. Annoying but we need to create this
-        K = torch.eye(3, device=device)
-        K[0, 0] = K[1, 1] = self.focal_length
-        K[1, 2] = K[0, 2] = self.img_size / 2  # Because the neural renderer only support squared images
-        K = K.unsqueeze(0)
-        R = torch.eye(3, device=device).unsqueeze(0)
-        t = torch.zeros(3, device=device).unsqueeze(0)
-        rend_depth = self.neural_renderer(pred_verts,
-                                        face_tensor[None].expand(pred_verts.shape[0], -1, -1).int(),
-                                        # textures=texture_atlas_rgb,
-                                        mode='depth',
-                                        K=K, R=R, t=t)
+        # K = torch.eye(3, device=device)
+        # K[0, 0] = K[1, 1] = self.focal_length
+        # K[1, 2] = K[0, 2] = self.img_size / 2  # Because the neural renderer only support squared images
+        # K = K.unsqueeze(0)
+        # R = torch.eye(3, device=device).unsqueeze(0)
+        # t = torch.zeros(3, device=device).unsqueeze(0)
+        # rend_depth = self.neural_renderer(pred_verts,
+        #                                 face_tensor[None].expand(pred_verts.shape[0], -1, -1).int(),
+        #                                 # textures=texture_atlas_rgb,
+        #                                 mode='depth',
+        #                                 K=K, R=R, t=t)
 
-        rend_depth_at_proj = torch.nn.functional.grid_sample(rend_depth[:,None,:,:], map_verts_proj[:,None,:,:]) # B,1,1,N
-        rend_depth_at_proj = rend_depth_at_proj.squeeze(1).squeeze(1) # B,N
+        # rend_depth_at_proj = torch.nn.functional.grid_sample(rend_depth[:,None,:,:], map_verts_proj[:,None,:,:]) # B,1,1,N
+        # rend_depth_at_proj = rend_depth_at_proj.squeeze(1).squeeze(1) # B,N
 
         img_rgba = torch.cat([batch['img'], batch['mask'][:,None,:,:]], dim=1) # B,4,H,W
         img_rgba_at_proj = torch.nn.functional.grid_sample(img_rgba, map_verts_proj[:,None,:,:]) # B,4,1,N
         img_rgba_at_proj = img_rgba_at_proj.squeeze(2) # B,4,N
 
-        visibility_mask = map_verts_depth <= (rend_depth_at_proj + 1e-4) # B,N
-        img_rgba_at_proj[:,3,:][~visibility_mask] = 0
+        # visibility_mask = map_verts_depth <= (rend_depth_at_proj + 1e-4) # B,N
+        # img_rgba_at_proj[:,3,:][~visibility_mask] = 0
 
         # Paste image back onto square uv_image
         uv_image = torch.zeros((batch['img'].shape[0], 4, 256, 256), dtype=torch.float, device=device)
@@ -149,7 +148,6 @@ class HMR2_4dhuman(PHALP):
 
     def setup_hmr(self):
         self.HMAR = HMR2023TextureSampler(self.cfg)
-        # self.HMAR = HMR2Predictor(self.cfg)
 
     def get_detections(self, image, frame_name, t_, additional_data=None, measurments=None):
         (
