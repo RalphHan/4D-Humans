@@ -135,7 +135,7 @@ class HMR2023TextureSampler(HMR2Predictor):
         uv_image[:, :, valid_mask] = img_rgba_at_proj
         import cv2
         import uuid
-        os.makedirs("tmp")
+        os.makedirs("tmp",exist_ok=True)
         the_uuid=str(uuid.uuid4())
         cv2.imwrite(f"tmp/{the_uuid}.png", uv_image[0].cpu().numpy().transpose(1,2,0)[:,:,:3])
         cv2.imwrite(f"tmp/{the_uuid}_mask.png", uv_image[0].cpu().numpy().transpose(1,2,0)[:,:,3])
