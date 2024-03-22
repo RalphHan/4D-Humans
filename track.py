@@ -122,7 +122,7 @@ class HMR2023TextureSampler(HMR2Predictor):
 
         # rend_depth_at_proj = torch.nn.functional.grid_sample(rend_depth[:,None,:,:], map_verts_proj[:,None,:,:]) # B,1,1,N
         # rend_depth_at_proj = rend_depth_at_proj.squeeze(1).squeeze(1) # B,N
-
+        batch['mask']=torch.ones_like(batch['mask'])
         img_rgba = torch.cat([batch['img'], batch['mask'][:,None,:,:]], dim=1) # B,4,H,W
         img_rgba_at_proj = torch.nn.functional.grid_sample(img_rgba, map_verts_proj[:,None,:,:]) # B,4,1,N
         img_rgba_at_proj = img_rgba_at_proj.squeeze(2) # B,4,N
