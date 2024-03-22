@@ -105,34 +105,40 @@ class HMR2023TextureSampler(HMR2Predictor):
         # map_verts_view = einsum('bij,bnj->bni', R, map_verts) + t # R=I t=0
         focal = self.focal_length / (self.img_size / 2)
         map_verts_proj = focal * map_verts[:, :, :2] / map_verts[:, :, 2:3] # B,N,2
-        # map_verts_depth = map_verts[:, :, 2] # B,N
+        map_verts_depth = map_verts[:, :, 2] # B,N
 
         # Render Depth. Annoying but we need to create this
-        # K = torch.eye(3, device=device)
-        # K[0, 0] = K[1, 1] = self.focal_length
-        # K[1, 2] = K[0, 2] = self.img_size / 2  # Because the neural renderer only support squared images
-        # K = K.unsqueeze(0)
-        # R = torch.eye(3, device=device).unsqueeze(0)
-        # t = torch.zeros(3, device=device).unsqueeze(0)
-        # rend_depth = self.neural_renderer(pred_verts,
-        #                                 face_tensor[None].expand(pred_verts.shape[0], -1, -1).int(),
-        #                                 # textures=texture_atlas_rgb,
-        #                                 mode='depth',
-        #                                 K=K, R=R, t=t)
+        K = torch.eye(3, device=device)
+        K[0, 0] = K[1, 1] = self.focal_length
+        K[1, 2] = K[0, 2] = self.img_size / 2  # Because the neural renderer only support squared images
+        K = K.unsqueeze(0)
+        R = torch.eye(3, device=device).unsqueeze(0)
+        t = torch.zeros(3, device=device).unsqueeze(0)
+        rend_depth = self.neural_renderer(pred_verts,
+                                        face_tensor[None].expand(pred_verts.shape[0], -1, -1).int(),
+                                        # textures=texture_atlas_rgb,
+                                        mode='depth',
+                                        K=K, R=R, t=t)
 
-        # rend_depth_at_proj = torch.nn.functional.grid_sample(rend_depth[:,None,:,:], map_verts_proj[:,None,:,:]) # B,1,1,N
-        # rend_depth_at_proj = rend_depth_at_proj.squeeze(1).squeeze(1) # B,N
+        rend_depth_at_proj = torch.nn.functional.grid_sample(rend_depth[:,None,:,:], map_verts_proj[:,None,:,:]) # B,1,1,N
+        rend_depth_at_proj = rend_depth_at_proj.squeeze(1).squeeze(1) # B,N
 
         img_rgba = torch.cat([batch['img'], batch['mask'][:,None,:,:]], dim=1) # B,4,H,W
         img_rgba_at_proj = torch.nn.functional.grid_sample(img_rgba, map_verts_proj[:,None,:,:]) # B,4,1,N
         img_rgba_at_proj = img_rgba_at_proj.squeeze(2) # B,4,N
 
-        # visibility_mask = map_verts_depth <= (rend_depth_at_proj + 1e-4) # B,N
-        # img_rgba_at_proj[:,3,:][~visibility_mask] = 0
+        visibility_mask = map_verts_depth <= (rend_depth_at_proj + 1e-4) # B,N
+        img_rgba_at_proj[:,3,:][~visibility_mask] = 0
 
         # Paste image back onto square uv_image
         uv_image = torch.zeros((batch['img'].shape[0], 4, 256, 256), dtype=torch.float, device=device)
         uv_image[:, :, valid_mask] = img_rgba_at_proj
+        import cv2
+        import uuid
+        os.makedirs("tmp")
+        the_uuid=str(uuid.uuid4())
+        cv2.imwrite(f"tmp/{the_uuid}.png", uv_image[0].cpu().numpy().transpose(1,2,0)[:,:,:3])
+        cv2.imwrite(f"tmp/{the_uuid}_mask.png", uv_image[0].cpu().numpy().transpose(1,2,0)[:,:,3])
 
         out = {
             'uv_image':  uv_image,
