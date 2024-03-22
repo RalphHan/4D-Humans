@@ -62,12 +62,12 @@ class HMR2023TextureSampler(HMR2Predictor):
         self.img_size = 256         #self.cfg.MODEL.IMAGE_SIZE
         self.focal_length = 5000.   #self.cfg.EXTRA.FOCAL_LENGTH
 
-        # import neural_renderer as nr
-        # self.neural_renderer = nr.Renderer(dist_coeffs=None, orig_size=self.img_size,
-        #                                   image_size=self.img_size,
-        #                                   light_intensity_ambient=1,
-        #                                   light_intensity_directional=0,
-        #                                   anti_aliasing=False)
+        import neural_renderer as nr
+        self.neural_renderer = nr.Renderer(dist_coeffs=None, orig_size=self.img_size,
+                                          image_size=self.img_size,
+                                          light_intensity_ambient=1,
+                                          light_intensity_directional=0,
+                                          anti_aliasing=False)
 
     def forward(self, x):
         batch = {
