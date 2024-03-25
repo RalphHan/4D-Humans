@@ -4,6 +4,9 @@ from pathlib import Path
 from typing import Optional, Tuple
 
 import os
+import sys
+
+sys.path.append('../YOLOv6')
 import hydra
 import torch
 import numpy as np
@@ -22,6 +25,7 @@ warnings.filterwarnings('ignore')
 
 log = get_pylogger(__name__)
 
+
 class HMR2Predictor(HMR2018Predictor):
     def __init__(self, cfg) -> None:
         super().__init__(cfg)
@@ -38,8 +42,8 @@ class HMR2Predictor(HMR2018Predictor):
     def forward(self, x):
         hmar_out = self.hmar_old(x)
         batch = {
-            'img': x[:,:3,:,:],
-            'mask': (x[:,3,:,:]).clip(0,1),
+            'img': x[:, :3, :, :],
+            'mask': (x[:, 3, :, :]).clip(0, 1),
         }
         model_out = self.model(batch)
         out = hmar_out | {
@@ -47,7 +51,8 @@ class HMR2Predictor(HMR2018Predictor):
             'pred_cam': model_out['pred_cam'],
         }
         return out
-    
+
+
 class HMR2023TextureSampler(HMR2Predictor):
     def __init__(self, cfg) -> None:
         super().__init__(cfg)
@@ -59,8 +64,8 @@ class HMR2023TextureSampler(HMR2Predictor):
         self.register_buffer('tex_bmap', torch.tensor(bmap, dtype=torch.float))
         self.register_buffer('tex_fmap', torch.tensor(fmap, dtype=torch.long))
 
-        self.img_size = 256         #self.cfg.MODEL.IMAGE_SIZE
-        self.focal_length = 5000.   #self.cfg.EXTRA.FOCAL_LENGTH
+        self.img_size = 256  # self.cfg.MODEL.IMAGE_SIZE
+        self.focal_length = 5000.  # self.cfg.EXTRA.FOCAL_LENGTH
 
         # import neural_renderer as nr
         # self.neural_renderer = nr.Renderer(dist_coeffs=None, orig_size=self.img_size,
@@ -70,9 +75,10 @@ class HMR2023TextureSampler(HMR2Predictor):
         #                                   anti_aliasing=False)
 
     def forward(self, x):
+        x = x[:, :3, :, :]
         batch = {
-            'img': x[:,:3,:,:],
-            'mask': (x[:,3,:,:]).clip(0,1),
+            'img': x,
+            # 'mask': (x[:,3,:,:]).clip(0,1),
         }
         model_out = self.model(batch)
 
@@ -85,26 +91,26 @@ class HMR2023TextureSampler(HMR2Predictor):
             # faces: F,3
             valid_mask = (fmap >= 0)
 
-            fmap_flat = fmap[valid_mask]      # N
-            bmap_flat = bmap[valid_mask,:]    # N,3
+            fmap_flat = fmap[valid_mask]  # N
+            bmap_flat = bmap[valid_mask, :]  # N,3
 
             face_vids = faces[fmap_flat, :]  # N,3
-            face_verts = verts[:, face_vids, :] # B,N,3,3
+            face_verts = verts[:, face_vids, :]  # B,N,3,3
 
             bs = face_verts.shape
-            map_verts = torch.einsum('bnij,ni->bnj', face_verts, bmap_flat) # B,N,3
+            map_verts = torch.einsum('bnij,ni->bnj', face_verts, bmap_flat)  # B,N,3
 
             return map_verts, valid_mask
 
         pred_verts = model_out['pred_vertices'] + model_out['pred_cam_t'].unsqueeze(1)
         device = pred_verts.device
         face_tensor = torch.tensor(self.smpl.faces.astype(np.int64), dtype=torch.long, device=device)
-        map_verts, valid_mask = unproject_uvmap_to_mesh(self.tex_bmap, self.tex_fmap, pred_verts, face_tensor) # B,N,3
+        map_verts, valid_mask = unproject_uvmap_to_mesh(self.tex_bmap, self.tex_fmap, pred_verts, face_tensor)  # B,N,3
 
         # Project map_verts to image using K,R,t
         # map_verts_view = einsum('bij,bnj->bni', R, map_verts) + t # R=I t=0
         focal = self.focal_length / (self.img_size / 2)
-        map_verts_proj = focal * map_verts[:, :, :2] / map_verts[:, :, 2:3] # B,N,2
+        map_verts_proj = focal * map_verts[:, :, :2] / map_verts[:, :, 2:3]  # B,N,2
         # map_verts_depth = map_verts[:, :, 2] # B,N
 
         # Render Depth. Annoying but we need to create this
@@ -122,31 +128,25 @@ class HMR2023TextureSampler(HMR2Predictor):
 
         # rend_depth_at_proj = torch.nn.functional.grid_sample(rend_depth[:,None,:,:], map_verts_proj[:,None,:,:]) # B,1,1,N
         # rend_depth_at_proj = rend_depth_at_proj.squeeze(1).squeeze(1) # B,N
-        batch['mask']=torch.ones_like(batch['mask'])
-        img_rgba = torch.cat([batch['img'], batch['mask'][:,None,:,:]], dim=1) # B,4,H,W
-        img_rgba_at_proj = torch.nn.functional.grid_sample(img_rgba, map_verts_proj[:,None,:,:]) # B,4,1,N
-        img_rgba_at_proj = img_rgba_at_proj.squeeze(2) # B,4,N
+        img_rgba = torch.cat([x, torch.ones_like(x[:, :1])], dim=1)  # B,4,H,W
+        img_rgba_at_proj = torch.nn.functional.grid_sample(img_rgba, map_verts_proj[:, None, :, :])  # B,4,1,N
+        img_rgba_at_proj = img_rgba_at_proj.squeeze(2)  # B,4,N
 
         # visibility_mask = map_verts_depth <= (rend_depth_at_proj + 1e-4) # B,N
         # img_rgba_at_proj[:,3,:][~visibility_mask] = 0
 
         # Paste image back onto square uv_image
-        uv_image = torch.zeros((batch['img'].shape[0], 4, 256, 256), dtype=torch.float, device=device)
+        uv_image = torch.zeros((x.shape[0], 4, 256, 256), dtype=torch.float, device=device)
         uv_image[:, :, valid_mask] = img_rgba_at_proj
-        import cv2
-        import uuid
-        os.makedirs("tmp2",exist_ok=True)
-        the_uuid=str(uuid.uuid4())
-        cv2.imwrite(f"tmp2/{the_uuid}.png", uv_image[0].cpu().numpy().transpose(1,2,0)[:,:,:3]*255)
-        cv2.imwrite(f"tmp2/{the_uuid}_mask.png", uv_image[0].cpu().numpy().transpose(1,2,0)[:,:,3]*255)
 
         out = {
-            'uv_image':  uv_image,
-            'uv_vector' : self.hmar_old.process_uv_image(uv_image),
+            'uv_image': uv_image,
+            'uv_vector': self.hmar_old.process_uv_image(uv_image),
             'pose_smpl': model_out['pred_smpl_params'],
-            'pred_cam':  model_out['pred_cam'],
+            'pred_cam': model_out['pred_cam'],
         }
         return out
+
 
 class HMR2_4dhuman(PHALP):
     def __init__(self, cfg):
@@ -157,27 +157,29 @@ class HMR2_4dhuman(PHALP):
 
     def get_detections(self, image, frame_name, t_, additional_data=None, measurments=None):
         (
-            pred_bbox, pred_bbox, pred_masks, pred_scores, pred_classes, 
+            pred_bbox, pred_bbox, pred_scores, pred_classes,
             ground_truth_track_id, ground_truth_annotations
-        ) =  super().get_detections(image, frame_name, t_, additional_data, measurments)
+        ) = super().get_detections(image, frame_name, t_, additional_data, measurments)
 
         # Pad bounding boxes 
         pred_bbox_padded = expand_bbox_to_aspect_ratio(pred_bbox, self.cfg.expand_bbox_shape)
 
         return (
-            pred_bbox, pred_bbox_padded, pred_masks, pred_scores, pred_classes,
+            pred_bbox, pred_bbox_padded, pred_scores, pred_classes,
             ground_truth_track_id, ground_truth_annotations
         )
-    
+
 
 @dataclass
 class Human4DConfig(FullConfig):
     # override defaults if needed
-    expand_bbox_shape: Optional[Tuple[int]] = (192,256)
+    expand_bbox_shape: Optional[Tuple[int]] = (192, 256)
     pass
+
 
 cs = ConfigStore.instance()
 cs.store(name="config", node=Human4DConfig)
+
 
 @hydra.main(version_base="1.2", config_name="config")
 def main(cfg: DictConfig) -> Optional[float]:
@@ -186,6 +188,7 @@ def main(cfg: DictConfig) -> Optional[float]:
     phalp_tracker = HMR2_4dhuman(cfg)
 
     phalp_tracker.track()
+
 
 if __name__ == "__main__":
     main()
