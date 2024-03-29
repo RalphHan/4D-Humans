@@ -302,6 +302,7 @@ def postprocess(final_visuals_dic, video_name):
 
 @hydra.main(version_base="1.2", config_name="config")
 def main(cfg: DictConfig) -> Optional[float]:
+    cfg.render.enable = False
     os.makedirs("tmp_input", exist_ok=True)
     os.makedirs("tmp_output", exist_ok=True)
     """Main function for running the PHALP tracker."""
