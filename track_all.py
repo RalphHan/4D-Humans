@@ -305,7 +305,7 @@ def main(cfg: DictConfig) -> Optional[float]:
     os.makedirs("tmp_input", exist_ok=True)
     os.makedirs("tmp_output", exist_ok=True)
     """Main function for running the PHALP tracker."""
-    endpoint = os.getenv("ENDPOINT")
+    endpoint = os.getenv("ENDPOINT") + ":" + os.getenv("CUDA_VISIBLE_DEVICES", "0")
     assert endpoint
     queue = multiprocessing.Queue(maxsize=2)
     downloader = multiprocessing.Process(target=download_task, args=(cfg, queue))
