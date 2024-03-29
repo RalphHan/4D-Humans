@@ -12,6 +12,10 @@ import torch
 import numpy as np
 from hydra.core.config_store import ConfigStore
 from omegaconf import DictConfig
+from collections import defaultdict
+import rotation_conversions as geometry
+import json
+import binascii
 
 from phalp.configs.base import FullConfig
 from phalp.models.hmar.hmr import HMR2018Predictor
@@ -180,6 +184,55 @@ class Human4DConfig(FullConfig):
 cs = ConfigStore.instance()
 cs.store(name="config", node=Human4DConfig)
 
+@torch.no_grad()
+def postprocess(final_visuals_dic, video_name):
+    persons = defaultdict(lambda: defaultdict(list))
+    for k, v in sorted(final_visuals_dic.items(), key=lambda x: x[0]):
+        for tracked_time, tid, _3d_joints, smpl, camera, bbox, size in \
+                zip(v['tracked_time'], v['tid'], v['3d_joints'],
+                    v['smpl'], v['camera'], v['bbox'], v['size']):
+            if tracked_time != 0:
+                continue
+            persons[tid]['3d_joints'].append(_3d_joints)
+            persons[tid]['smpl'].append(smpl)
+            persons[tid]['camera'].append(camera)
+            persons[tid]['bbox'].append(bbox)
+            persons[tid]['size'].append(size)
+            persons[tid]['time'].append(v['time'])
+    wanted = []
+    for tid, person in persons.items():
+        if len(person['time']) < 64:
+            continue
+        var = np.stack(person['3d_joints']).std(0).mean()
+        bbox = np.stack(person['bbox'])[:, 2:]
+        size = np.float32(person['size'])
+        relative_area = ((bbox[:, 0] * bbox[:, 1]) / (size[:, 0] * size[:, 1] + 1e-7)).mean()
+        absolute_area = (bbox[:, 0] * bbox[:, 1]).mean()
+        camera = np.stack(person['camera'])  # s,3
+        matrix = np.stack(
+            [np.concatenate((x['global_orient'], x['body_pose']), axis=0) for x in person['smpl']])  # s,24,3,3
+        matrix[:, 0, 1:] *= -1
+        rotations = geometry.matrix_to_axis_angle(torch.from_numpy(matrix)).numpy()  # s,24,3
+        binascii.b2a_base64(
+            rotations.flatten().astype(np.float32).tobytes()).decode(
+            "utf-8"),
+        new_person = {
+            'time': binascii.b2a_base64(
+                np.int32(person['time']).tobytes()).decode("utf-8"),
+            'var': var.item(),
+            'relative_area': relative_area.item(),
+            'absolute_area': absolute_area.item(),
+            'camera': binascii.b2a_base64(
+                camera.flatten().astype(np.float32).tobytes()).decode(
+                "utf-8"),
+            'rotations': binascii.b2a_base64(
+                rotations.flatten().astype(np.float32).tobytes()).decode(
+                "utf-8"),
+        }
+        wanted.append(new_person)
+    if wanted:
+        with open(f"outputs/results_tracks/{video_name}.json", "w") as f:
+            json.dump(wanted, f, indent=4)
 
 @hydra.main(version_base="1.2", config_name="config")
 def main(cfg: DictConfig) -> Optional[float]:
@@ -187,7 +240,9 @@ def main(cfg: DictConfig) -> Optional[float]:
 
     phalp_tracker = HMR2_4dhuman(cfg)
 
-    phalp_tracker.track()
+    final_visuals_dic=phalp_tracker.track()
+    assert final_visuals_dic
+    postprocess(final_visuals_dic, cfg.video.source.split('/')[-1].split('.')[0])
 
 
 if __name__ == "__main__":
