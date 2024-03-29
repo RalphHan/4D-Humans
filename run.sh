@@ -1,5 +1,5 @@
 if [ $# -eq 0 ]; then
-    docker run -it --gpus all \
+    docker run -itd --gpus all \
       --name 4d-humans \
       -v `pwd`:/4D-Humans \
       -v $(readlink -f `pwd`/../PHALP):/PHALP \
