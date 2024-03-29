@@ -277,6 +277,7 @@ def postprocess(final_visuals_dic, video_name):
         camera = np.stack(person['camera'])  # s,3
         matrix = np.stack(
             [np.concatenate((x['global_orient'], x['body_pose']), axis=0) for x in person['smpl']])  # s,24,3,3
+        matrix[:, 0, 1:] *= -1
         rotations = geometry.matrix_to_axis_angle(torch.from_numpy(matrix)).numpy()  # s,24,3
         binascii.b2a_base64(
             rotations.flatten().astype(np.float32).tobytes()).decode(
