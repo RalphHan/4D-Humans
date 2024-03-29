@@ -282,7 +282,8 @@ def postprocess(final_visuals_dic, video_name):
             rotations.flatten().astype(np.float32).tobytes()).decode(
             "utf-8"),
         new_person = {
-            'time': person['time'],
+            'time': binascii.b2a_base64(
+                np.int32(person['time']).tobytes()).decode("utf-8"),
             'var': var.item(),
             'relative_area': relative_area.item(),
             'absolute_area': absolute_area.item(),
@@ -292,7 +293,6 @@ def postprocess(final_visuals_dic, video_name):
             'rotations': binascii.b2a_base64(
                 rotations.flatten().astype(np.float32).tobytes()).decode(
                 "utf-8"),
-            'dtype': "float32",
         }
         wanted.append(new_person)
     if wanted:
