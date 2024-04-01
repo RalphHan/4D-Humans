@@ -5,6 +5,7 @@ if [ $# -eq 0 ]; then
       -v $(readlink -f `pwd`/../PHALP):/PHALP \
       -v $(readlink -f `pwd`/../YOLOv6):/YOLOv6 \
       -v /home/$USER/.gsutil:/root/.gsutil \
+      -v /home/$USER/.config:/root/.config \
       --restart on-failure \
       ralphhan/4d-humans \
       bash /4D-Humans/$0 1
