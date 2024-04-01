@@ -34,6 +34,7 @@ dotenv.load_dotenv()
 
 TASK_SERVER = os.getenv("TASK_SERVER")
 SPLASH_AUTH_TOKEN = os.getenv("SPLASH_AUTH_TOKEN")
+VALIDATE = os.getenv("VALIDATE", "true").lower() == "true"
 
 assert TASK_SERVER
 
@@ -221,12 +222,13 @@ def download_task(cfg, queue):
         bucket_name = os.getenv("GCS_BUCKET_NAME")
         assert bucket_name
         bucket = client.get_bucket(bucket_name)
-        example_video = "kinetic/val/high jump/7pAnkFrScT4_000171_000181.mp4"
-        local_video = "tmp_input/" + example_video.split('/')[-1]
-        bucket.get_blob(example_video).download_to_filename(local_video)
-        source_dir = extract(cfg, local_video)
-        print(f"Download {example_video}...")
-        queue.put((example_video, source_dir, local_video))
+        if VALIDATE:
+            example_video = "kinetic/val/high jump/7pAnkFrScT4_000171_000181.mp4"
+            local_video = "tmp_input/" + example_video.split('/')[-1]
+            bucket.get_blob(example_video).download_to_filename(local_video)
+            source_dir = extract(cfg, local_video)
+            print(f"Download {example_video}...")
+            queue.put((example_video, source_dir, local_video))
         failed = 0
         max_failed = 5
         while True:
@@ -313,14 +315,15 @@ def main(cfg: DictConfig) -> Optional[float]:
     downloader = multiprocessing.Process(target=download_task, args=(cfg, queue))
     downloader.start()
     phalp_tracker = HMR2_4dhuman(cfg)
-    example_task = queue.get()
-    assert example_task
-    example_video, source_dir, local_video = example_task
-    final_visuals_dic = phalp_tracker.track(source_dir)
-    assert final_visuals_dic
-    postprocess(final_visuals_dic, local_video.split('/')[-1].split('.')[0])
-    os.system("rm -rf \"" + source_dir + "\"")
-    os.system("rm -rf \"" + local_video + "\"")
+    if VALIDATE:
+        example_task = queue.get()
+        assert example_task
+        example_video, source_dir, local_video = example_task
+        final_visuals_dic = phalp_tracker.track(source_dir)
+        assert final_visuals_dic
+        postprocess(final_visuals_dic, local_video.split('/')[-1].split('.')[0])
+        os.system("rm -rf \"" + source_dir + "\"")
+        os.system("rm -rf \"" + local_video + "\"")
     while True:
         task = queue.get()
         if task is None:
