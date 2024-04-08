@@ -237,12 +237,13 @@ def download_task(cfg, queue):
                 assert ret.status_code == 200
                 task_id = ret.json()["task_id"]
                 local_video = "tmp_input/" + task_id.split('/')[-1]
+                failed = 0
             except Exception:
                 print("Failed to get task")
                 failed += 1
                 if failed >= max_failed:
                     break
-                time.sleep(1)
+                time.sleep(10)
                 continue
             bucket.get_blob(task_id).download_to_filename(local_video)
             source_dir = extract(cfg, local_video)
